@@ -1,347 +1,251 @@
-// ===== Inspector de árbol enraizado (arreglo de padres) =====
+// Grafos dirigidos y los Puentes de Königsberg (Euler)
+// Frontend: construye la matriz de adyacencia y pide el análisis al backend
+// Python (/api/analizar). Si el backend no está (GitHub Pages), usa el
+// fallback local 'analizarLocal', que replica exactamente la lógica de app.py.
 
-const SVGNS = "http://www.w3.org/2000/svg";
-let tree = null;      // { raiz, hijos_de, padre_de, vertices }
-let positions = {};
-let highlight = null;
+let N = 4;
+let datos = [];
 
-// ---------- FILAS DE ENTRADA ----------
-function addRow(vertex = "", parent = "") {
-    const tbody = document.getElementById("rows");
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-        <td><input class="in-v" placeholder="vértice" value="${vertex}" autocomplete="off"></td>
-        <td><input class="in-p" placeholder="padre (vacío = raíz)" value="${parent}" autocomplete="off"></td>
-        <td><button class="rm" onclick="rmRow(this)" title="quitar">×</button></td>
-    `;
-    tbody.appendChild(tr);
-    syncOnEdit(tr);
-    return tr;
+function initDatos() {
+    datos = Array.from({ length: N }, () => Array(N).fill(0));
 }
 
-function rmRow(btn) {
-    const tr = btn.closest("tr");
-    if (document.querySelectorAll("#rows tr").length <= 1) return;
-    tr.style.animation = "rowIn 0.2s ease reverse";
-    setTimeout(() => { tr.remove(); redraw(); }, 180);
+function setSize(delta) {
+    const nuevo = N + delta;
+    if (nuevo < 2 || nuevo > 10) return;
+    const viejo = datos;
+    N = nuevo;
+    const nuevaMatriz = Array.from({ length: N }, () => Array(N).fill(0));
+    for (let i = 0; i < N; i++)
+        for (let j = 0; j < N; j++)
+            if (viejo[i] && viejo[i][j] != null) nuevaMatriz[i][j] = viejo[i][j];
+    datos = nuevaMatriz;
+    document.getElementById('sizeLabel').textContent = N;
+    renderMatriz();
 }
 
-function syncOnEdit(tr) {
-    tr.querySelectorAll("input").forEach(inp => {
-        inp.addEventListener("input", redraw);
-    });
-}
+function etiqueta(i) { return 'v' + i; }
 
-// ---------- LEER LA TABLA ----------
-function readParents() {
-    const padres = {};
-    document.querySelectorAll("#rows tr").forEach(tr => {
-        const v = tr.querySelector(".in-v").value.trim();
-        const p = tr.querySelector(".in-p").value.trim();
-        if (v) padres[v] = p === "" ? null : p;
-    });
-    return padres;
-}
-
-function buildTree(padres) {
-    const padre_de = {};
-    const hijos_de = {};
-    const vertices = new Set();
-    let raiz = null;
-
-    for (const [v, p] of Object.entries(padres)) {
-        vertices.add(v);
-        if (p === null || p === "" || p === v) {
-            raiz = v;
-            padre_de[v] = null;
-        } else {
-            vertices.add(p);
-            padre_de[v] = p;
-            (hijos_de[p] = hijos_de[p] || []).push(v);
+function renderMatriz() {
+    const t = document.getElementById('matrix');
+    let html = '<tr><th class="corner">·</th>';
+    for (let j = 0; j < N; j++) html += `<th>${etiqueta(j)}</th>`;
+    html += '</tr>';
+    for (let i = 0; i < N; i++) {
+        html += `<tr><th>${etiqueta(i)}</th>`;
+        for (let j = 0; j < N; j++) {
+            const diag = i === j ? 'diag' : '';
+            const on = datos[i][j] > 0 ? 'on' : '';
+            html += `<td><input class="${diag} ${on}" inputmode="numeric"
+                        value="${datos[i][j]}"
+                        onchange="setCell(${i},${j},this)"
+                        oninput="markOn(${i},${j},this)"></td>`;
         }
+        html += '</tr>';
     }
-    for (const p of Object.keys(hijos_de)) {
-        if (!(p in padre_de)) padre_de[p] = null;
-    }
-
-    return { raiz, padre_de, hijos_de, vertices: [...vertices] };
+    t.innerHTML = html;
 }
 
-function redraw() {
-    const padres = readParents();
-    if (Object.keys(padres).length === 0) { tree = null; clearSvg(); return; }
-    tree = buildTree(padres);
-    highlight = null;
-    drawTree(true);
-    const lg = document.getElementById("legend");
-    if (tree.raiz) {
-        lg.textContent = `raíz: ${tree.raiz}  ·  ${tree.vertices.length} vértices  ·  clic en un nodo para inspeccionarlo`;
-    } else {
-        lg.textContent = "falta una raíz (un vértice con padre vacío)";
-    }
+function markOn(i, j, el) {
+    const v = parseInt(el.value, 10);
+    el.classList.toggle('on', v > 0);
 }
 
-// ---------- DIBUJO SVG (jerárquico, de arriba hacia abajo) ----------
-function clearSvg() {
-    document.getElementById("svg").innerHTML = "";
-    document.getElementById("legend").textContent = "Defina el árbol para dibujarlo.";
+function setCell(i, j, el) {
+    let v = parseInt(el.value, 10);
+    if (isNaN(v) || v < 0) v = 0;
+    datos[i][j] = v;
+    el.value = v;
+    el.classList.toggle('on', v > 0);
 }
 
-function layout() {
-    const { raiz, hijos_de } = tree;
-    positions = {};
-    if (!raiz) return { maxDepth: 0, leafCount: 0 };
+/* ---------- LÓGICA LOCAL (espejo de app.py) ---------- */
+function analizarLocal(matriz) {
+    const n = matriz.length;
+    const V = Array.from({ length: n }, (_, i) => 'v' + i);
 
-    let leaf = 0;
-    const depths = {};
-
-    function assign(node, depth) {
-        depths[node] = depth;
-        const kids = (hijos_de[node] || []);
-        if (kids.length === 0) {
-            positions[node] = { col: leaf++, depth };
-            return positions[node].col;
-        }
-        const cols = kids.map(k => assign(k, depth + 1));
-        const mid = (Math.min(...cols) + Math.max(...cols)) / 2;
-        positions[node] = { col: mid, depth };
-        return mid;
-    }
-    assign(raiz, 0);
-
-    const maxDepth = Math.max(...Object.values(depths));
-    return { maxDepth, leafCount: Math.max(1, leaf) };
-}
-
-function drawTree(animate) {
-    const svg = document.getElementById("svg");
-    svg.innerHTML = "";
-    if (!tree || !tree.raiz) return;
-
-    const { maxDepth, leafCount } = layout();
-
-    const W = 800, H = 540;
-    const padX = 48, padY = 56;
-    const colW = (W - padX * 2) / Math.max(1, leafCount);
-    const rowH = maxDepth > 0 ? (H - padY * 2) / maxDepth : 0;
-    const r = Math.max(14, Math.min(22, colW * 0.32));
-
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-
-    const px = node => padX + (positions[node].col + 0.5) * colW;
-    const py = node => padY + positions[node].depth * rowH;
-
-    // edges — conectores ortogonales (tipo organigrama) con esquinas redondeadas
-    let edgeDelay = 0;
-    const corner = 9; // radio de la esquina redondeada
-    for (const [parent, kids] of Object.entries(tree.hijos_de)) {
-        for (const kid of kids) {
-            const p = document.createElementNS(SVGNS, "path");
-            const x1 = px(parent), y1 = py(parent) + r;   // sale del borde inferior del padre
-            const x2 = px(kid), y2 = py(kid) - r;          // entra por el borde superior del hijo
-            const my = (y1 + y2) / 2;                       // altura del tramo horizontal
-
-            let d;
-            if (Math.abs(x2 - x1) < 1) {
-                // hijo justo debajo: línea recta vertical
-                d = `M ${x1} ${y1} L ${x2} ${y2}`;
+    const aristas = [];
+    let c = 1;
+    for (let i = 0; i < n; i++) {
+        for (let j = i; j < n; j++) {
+            if (i === j) {
+                for (let k = 0; k < matriz[i][j]; k++)
+                    aristas.push({ arista: 'e' + (c++), extremos: [V[i], V[i]], lazo: true });
             } else {
-                const dir = x2 > x1 ? 1 : -1;
-                d = `M ${x1} ${y1} ` +
-                    `L ${x1} ${my - corner} ` +
-                    `Q ${x1} ${my} ${x1 + dir * corner} ${my} ` +
-                    `L ${x2 - dir * corner} ${my} ` +
-                    `Q ${x2} ${my} ${x2} ${my + corner} ` +
-                    `L ${x2} ${y2}`;
+                const mult = Math.max(matriz[i][j], matriz[j][i]);
+                for (let k = 0; k < mult; k++)
+                    aristas.push({ arista: 'e' + (c++), extremos: [V[i], V[j]], lazo: false });
             }
-            p.setAttribute("d", d);
-            p.setAttribute("class", "edge-line");
-            if (!animate) { p.style.animation = "none"; p.style.opacity = "1"; }
-            else p.style.animationDelay = `${edgeDelay += 0.03}s`;
-            p.dataset.parent = parent;
-            p.dataset.child = kid;
-            svg.appendChild(p);
         }
     }
 
-    // nodes
-    let nodeDelay = 0;
-    for (const node of Object.keys(positions)) {
-        const g = document.createElementNS(SVGNS, "g");
-        g.setAttribute("class", "node-g");
-        g.setAttribute("transform", `translate(${px(node)}, ${py(node)})`);
-        if (animate) g.style.animationDelay = `${nodeDelay += 0.04}s`;
-        else g.style.animation = "none";
-        g.addEventListener("click", () => {
-            document.getElementById("query").value = node;
-            inspeccionar();
-        });
+    const grado = {}; V.forEach(v => grado[v] = 0);
+    aristas.forEach(a => {
+        const [u, w] = a.extremos;
+        if (a.lazo) grado[u] += 2; else { grado[u]++; grado[w]++; }
+    });
 
-        const c = document.createElementNS(SVGNS, "circle");
-        c.setAttribute("r", r);
-        c.setAttribute("class", "node-c" + (node === tree.raiz ? " is-root" : ""));
-        c.dataset.node = node;
-        g.appendChild(c);
+    const aislados = V.filter(v => grado[v] === 0);
 
-        const t = document.createElementNS(SVGNS, "text");
-        t.setAttribute("class", "node-t");
-        t.dataset.node = node;
-        t.textContent = node.length > 5 ? node.slice(0, 4) + "…" : node;
-        g.appendChild(t);
+    const ady = {}; V.forEach(v => ady[v] = new Set());
+    aristas.forEach(a => {
+        const [u, w] = a.extremos;
+        if (u !== w) { ady[u].add(w); ady[w].add(u); }
+    });
 
-        if (node === tree.raiz) {
-            const tag = document.createElementNS(SVGNS, "text");
-            tag.setAttribute("class", "root-tag");
-            tag.setAttribute("y", -r - 7);
-            tag.textContent = "RAÍZ";
-            g.appendChild(tag);
+    const conGrado = V.filter(v => grado[v] > 0);
+    let conexo = true;
+    if (conGrado.length) {
+        const vis = new Set(); const pila = [conGrado[0]];
+        while (pila.length) {
+            const x = pila.pop();
+            if (vis.has(x)) continue;
+            vis.add(x);
+            ady[x].forEach(y => { if (!vis.has(y)) pila.push(y); });
         }
-
-        svg.appendChild(g);
+        conexo = conGrado.every(v => vis.has(v));
     }
-}
 
-function paintHighlight(data) {
-    if (!tree) return;
-    const q = data.vertice;
-    const padre = data.padre;
-    const hijos = new Set(data.hijos);
-    const hermanos = new Set(data.hermanos);
+    const impares = V.filter(v => grado[v] % 2 !== 0);
+    const todosPares = impares.length === 0;
 
-    document.querySelectorAll(".node-c").forEach(c => {
-        const n = c.dataset.node;
-        c.classList.remove("is-query", "is-parent", "is-child", "is-sibling");
-        const t = document.querySelector(`.node-t[data-node="${CSS.escape(n)}"]`);
-        if (t) t.classList.remove("inv");
-
-        if (n === q) { c.classList.add("is-query"); if (t) t.classList.add("inv"); }
-        else if (n === padre) c.classList.add("is-parent");
-        else if (hijos.has(n)) c.classList.add("is-child");
-        else if (hermanos.has(n)) c.classList.add("is-sibling");
-    });
-
-    document.querySelectorAll(".edge-line").forEach(e => {
-        const hot = e.dataset.parent === q || e.dataset.child === q;
-        e.classList.toggle("hot", hot);
-    });
-}
-
-// ---------- ANÁLISIS LOCAL (fallback sin backend) ----------
-function fichaLocal(padres, vertice) {
-    const t = buildTree(padres);
-    if (!t.raiz) return { error: "No se identificó una raíz (un vértice sin padre)." };
-    if (!t.vertices.includes(vertice)) return { error: `El vértice '${vertice}' no pertenece al árbol.` };
-
-    const esRaiz = vertice === t.raiz;
-    const padre = t.padre_de[vertice] ?? null;
-    const hijos = (t.hijos_de[vertice] || []).slice().sort();
-    const esHoja = hijos.length === 0;
-    let hermanos = [];
-    if (!esRaiz && padre !== null) {
-        hermanos = (t.hijos_de[padre] || []).filter(h => h !== vertice).sort();
+    let tiene, motivo;
+    if (!conGrado.length) {
+        tiene = false;
+        motivo = 'El grafo no tiene aristas, por lo que no existe recorrido que trazar.';
+    } else if (!conexo) {
+        tiene = false;
+        motivo = 'No existe Circuito Euleriano: los vértices con aristas NO están todos conectados entre sí (el grafo no es conexo). Un circuito debe poder recorrer todo el grafo sin saltar entre partes separadas.';
+    } else if (!todosPares) {
+        tiene = false;
+        const lista = impares.map(v => `${v} (grado ${grado[v]})`).join(', ');
+        motivo = `No existe Circuito Euleriano. Euler demostró que se necesita que TODOS los vértices tengan grado par. Aquí hay ${impares.length} vértice(s) de grado impar: ${lista}. Por eso NO se puede recorrer sin levantar el lápiz (igual que los puentes de Königsberg, que tenían 4 vértices impares).`;
+    } else {
+        tiene = true;
+        motivo = 'SÍ existe un Circuito Euleriano. El grafo es conexo y todos sus vértices tienen grado par, que es exactamente la condición que Euler probó. Se puede partir de cualquier vértice, recorrer cada arista una sola vez y volver al inicio SIN levantar el lápiz.';
     }
+
     return {
-        vertice,
-        es_raiz: esRaiz,
-        padre: esRaiz ? null : padre,
-        hijos,
-        es_hoja: esHoja,
-        clasificacion: esHoja ? "Vértice Terminal (Hoja)" : "Vértice Interno",
-        hermanos,
-        raiz: t.raiz,
-        total: t.vertices.length,
+        vertices: V, n, aristas, total_aristas: aristas.length,
+        tabla_grados: V.map(v => ({ vertice: v, grado: grado[v] })),
+        aislados, grados_impares: impares, todos_pares: todosPares,
+        conexo, tiene_circuito_euleriano: tiene, diagnostico: motivo,
     };
 }
 
-// ---------- INSPECCIONAR ----------
-async function inspeccionar() {
-    const padres = readParents();
-    const vertice = document.getElementById("query").value.trim();
-
-    if (Object.keys(padres).length === 0) return snack("Defina al menos un vértice.");
-    if (!vertice) return snack("Escriba el vértice a inspeccionar.");
-
-    tree = buildTree(padres);
-    drawTree(false);
-
-    let data;
+/* ---------- ANÁLISIS ---------- */
+async function analizar() {
+    let res;
     try {
-        const resp = await fetch("/api/ficha", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ padres, vertice }),
+        const r = await fetch('/api/analizar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ matriz: datos }),
         });
-        data = await resp.json();
-    } catch {
-        data = fichaLocal(padres, vertice);
+        if (!r.ok) throw new Error('backend');
+        res = await r.json();
+        if (res.error) throw new Error(res.error);
+    } catch (e) {
+        res = analizarLocal(datos);
     }
-
-    if (data.error) return snack(data.error);
-
-    renderSheet(data);
-    highlight = vertice;
-    paintHighlight(data);
+    pintar(res);
 }
 
-function renderSheet(d) {
-    const sheet = document.getElementById("sheet");
-    sheet.classList.remove("hidden");
-    sheet.style.animation = "none"; sheet.offsetHeight; sheet.style.animation = "";
+function pintar(res) {
+    // 02 - Diagnóstico
+    const diagBlock = document.getElementById('diagBlock');
+    const mark = document.getElementById('verdictMark');
+    const vtext = document.getElementById('verdictText');
+    const si = res.tiene_circuito_euleriano;
+    mark.textContent = si ? '✓' : '✕';
+    mark.className = 'verdict-mark ' + (si ? 'yes' : 'no');
+    vtext.textContent = si ? 'Posee un Circuito Euleriano' : 'No posee Circuito Euleriano';
+    document.getElementById('diagBody').textContent = res.diagnostico;
+    diagBlock.classList.remove('hidden');
 
-    document.getElementById("sheetVertex").textContent = d.vertice;
+    // 03 - Vértices y grados
+    const vg = document.getElementById('vgInfo');
+    vg.innerHTML = `V(G) = { <b>${res.vertices.join(', ')}</b> }  ·  |V| = <b>${res.n}</b>  ·  aristas = <b>${res.total_aristas}</b>`;
 
-    const cl = document.getElementById("sheetClass");
-    cl.textContent = d.es_hoja ? "Terminal (Hoja)" : "Interno";
-    cl.className = "sheet-class " + (d.es_hoja ? "leaf" : "internal");
+    const gt = document.getElementById('gradosTable');
+    let gh = '<tr><th>Vértice</th><th>Grado δ(v)</th><th>Paridad</th></tr>';
+    res.tabla_grados.forEach(f => {
+        const impar = f.grado % 2 !== 0;
+        const aislado = f.grado === 0;
+        gh += `<tr>
+            <td>${f.vertice}${aislado ? '<span class="tag-aislado">aislado</span>' : ''}</td>
+            <td class="${impar ? 'impar' : 'par'}">${f.grado}</td>
+            <td>${impar ? 'impar <span class="tag-impar">impar</span>' : 'par'}</td>
+        </tr>`;
+    });
+    gt.innerHTML = gh;
 
-    // Padre
-    const fp = document.getElementById("fPadre");
-    fp.innerHTML = d.es_raiz
-        ? `<span class="chip root">RAÍZ · sin padre</span>`
-        : `<span class="chip">${d.padre}</span>`;
+    const ai = document.getElementById('aisladosInfo');
+    if (res.aislados.length)
+        ai.innerHTML = `Vértices aislados (grado 0): <b>${res.aislados.join(', ')}</b>`;
+    else
+        ai.innerHTML = 'No hay vértices aislados: todos tienen al menos una arista.';
+    document.getElementById('vertBlock').classList.remove('hidden');
 
-    // Hijos
-    const fh = document.getElementById("fHijos");
-    fh.innerHTML = d.hijos.length
-        ? d.hijos.map((h, i) => `<span class="chip" style="animation-delay:${i * .05}s">${h}</span>`).join("")
-        : `<span class="chip none">ninguno — es hoja</span>`;
+    // 04 - Función punto extremo-arista
+    const et = document.getElementById('edgesTable');
+    if (!res.aristas.length) {
+        et.innerHTML = '<tr><td class="mini">El grafo no tiene aristas.</td></tr>';
+    } else {
+        let eh = '<tr><th>Arista</th><th>Puntos extremos φ(e)</th><th>Tipo</th></tr>';
+        res.aristas.forEach(a => {
+            eh += `<tr>
+                <td>${a.arista}</td>
+                <td>{ ${a.extremos[0]}, ${a.extremos[1]} }</td>
+                <td>${a.lazo ? 'lazo' : 'arista'}</td>
+            </tr>`;
+        });
+        et.innerHTML = eh;
+    }
+    document.getElementById('edgeBlock').classList.remove('hidden');
 
-    // Hermanos
-    const fm = document.getElementById("fHermanos");
-    fm.innerHTML = d.hermanos.length
-        ? d.hermanos.map((h, i) => `<span class="chip" style="animation-delay:${i * .05}s">${h}</span>`).join("")
-        : `<span class="chip none">ninguno</span>`;
+    diagBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// ---------- EJEMPLO ----------
-function cargarEjemplo() {
-    const data = [
-        ["v0", ""],
-        ["v1", "v0"], ["v2", "v0"], ["v3", "v0"],
-        ["v4", "v1"], ["v5", "v1"],
-        ["v6", "v2"],
-        ["v7", "v3"], ["v8", "v3"], ["v9", "v3"],
-        ["v10", "v5"],
-    ];
-    document.getElementById("rows").innerHTML = "";
-    data.forEach(([v, p]) => addRow(v, p));
-    document.getElementById("query").value = "v3";
-    redraw();
-    snack("Ejemplo cargado · pruebe v3, v0 o v10");
+/* ---------- EJEMPLOS ---------- */
+function aplicar(m) {
+    N = m.length;
+    datos = m.map(f => f.slice());
+    document.getElementById('sizeLabel').textContent = N;
+    renderMatriz();
+    toast('Ejemplo cargado. Pulse «Analizar grafo».');
 }
 
-// ---------- SNACK ----------
+// Königsberg: 4 regiones, 7 puentes. Vértices de grado impar.
+// A-B 2, A-C 2, A-D 1, B-D 1, C-D 1  ->  grados 5,3,3,3 (todos impares)
+function cargarKonigsberg() {
+    aplicar([
+        [0, 2, 2, 1],
+        [2, 0, 0, 1],
+        [2, 0, 0, 1],
+        [1, 1, 1, 0],
+    ]);
+}
+
+// Grafo sí euleriano: ciclo de 4 vértices, todos grado par (2).
+function cargarEuler() {
+    aplicar([
+        [0, 1, 0, 1],
+        [1, 0, 1, 0],
+        [0, 1, 0, 1],
+        [1, 0, 1, 0],
+    ]);
+}
+
+/* ---------- UI ---------- */
 let snackTimer;
-function snack(msg) {
-    const s = document.getElementById("snack");
+function toast(msg) {
+    const s = document.getElementById('snack');
     s.textContent = msg;
-    s.classList.remove("hidden");
-    s.style.animation = "none"; s.offsetHeight; s.style.animation = "";
+    s.classList.remove('hidden');
     clearTimeout(snackTimer);
-    snackTimer = setTimeout(() => s.classList.add("hidden"), 3200);
+    snackTimer = setTimeout(() => s.classList.add('hidden'), 2600);
 }
 
-// ---------- INIT ----------
-addRow();
-addRow();
-addRow();
+initDatos();
+renderMatriz();

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Árbol Enraizado · Ficha Técnica de Vértices</title>
+    <title>Grafos Dirigidos · Puentes de Königsberg (Euler)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
@@ -14,79 +14,59 @@
         <header class="masthead">
             <div class="mast-left">
                 <span class="dot"></span>
-                <span class="kicker">Estructura de Datos</span>
+                <span class="kicker">Teoría de Grafos</span>
             </div>
-            <h1>Árbol Enraizado<span class="h1-sub">/ Inspector de anatomía y genealogía</span></h1>
-            <p class="lede">Representación en memoria mediante <strong>arreglo de padres</strong>. Consulte cualquier vértice para obtener su ficha técnica completa.</p>
+            <h1>Puentes de Königsberg<span class="h1-sub">/ Grafos dirigidos y Circuito Euleriano</span></h1>
+            <p class="lede">Ingrese la <strong>matriz de adyacencia</strong> (n × n). El programa lista los vértices, construye la tabla punto extremo–arista, detecta vértices aislados y evalúa si existe un <strong>Circuito Euleriano</strong>.</p>
         </header>
 
         <div class="layout">
-            <!-- COLUMNA IZQUIERDA: ENTRADA -->
             <section class="col col-input">
                 <div class="block">
                     <div class="block-num">01</div>
-                    <h2>Definir vértices</h2>
-                    <p class="block-note">Indique el padre de cada vértice. La <em>raíz</em> se deja con padre vacío o igual a sí misma.</p>
+                    <h2>Matriz de adyacencia</h2>
+                    <p class="block-note">Defina el tamaño y llene la matriz. Un <em>1</em> indica arista entre dos vértices; <em>0</em> si no hay.</p>
 
-                    <table class="ptable">
-                        <thead>
-                            <tr>
-                                <th>Vértice</th>
-                                <th>Su padre</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="rows"></tbody>
-                    </table>
-
-                    <button class="line-btn" id="addRow" onclick="addRow()">+ añadir vértice</button>
-                </div>
-
-                <div class="block">
-                    <div class="block-num">02</div>
-                    <h2>Consultar</h2>
-                    <div class="query-row">
-                        <input type="text" id="query" placeholder="vértice a inspeccionar" autocomplete="off">
-                        <button class="solid-btn" onclick="inspeccionar()">Inspeccionar →</button>
+                    <div class="size-row">
+                        <label>Vértices (n):</label>
+                        <button class="step" onclick="setSize(-1)">−</button>
+                        <span id="sizeLabel" class="size-val">4</span>
+                        <button class="step" onclick="setSize(1)">+</button>
                     </div>
-                    <button class="line-btn ghost" onclick="cargarEjemplo()">cargar ejemplo v0–v10</button>
+
+                    <div class="matrix-holder">
+                        <table class="matrix" id="matrix"></table>
+                    </div>
+
+                    <button class="solid-btn full" onclick="analizar()">Analizar grafo →</button>
+                    <button class="line-btn ghost" onclick="cargarKonigsberg()">cargar ejemplo: Königsberg</button>
+                    <button class="line-btn ghost" onclick="cargarEuler()">cargar ejemplo: sí euleriano</button>
                 </div>
             </section>
 
-            <!-- COLUMNA DERECHA: VISUAL + FICHA -->
             <section class="col col-output">
-                <div class="block block-tree">
-                    <div class="block-num">03</div>
-                    <h2>Diagrama</h2>
-                    <div class="svg-holder">
-                        <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                <div class="block block-diag hidden" id="diagBlock">
+                    <div class="block-num">02</div>
+                    <h2>Diagnóstico de Euler</h2>
+                    <div class="verdict" id="verdict">
+                        <span class="verdict-mark" id="verdictMark">—</span>
+                        <span class="verdict-text" id="verdictText">—</span>
                     </div>
-                    <p class="legend" id="legend">Defina el árbol para dibujarlo.</p>
+                    <p class="diag-body" id="diagBody"></p>
                 </div>
 
-                <div class="block block-sheet hidden" id="sheet">
+                <div class="block hidden" id="vertBlock">
+                    <div class="block-num">03</div>
+                    <h2>Vértices y grados</h2>
+                    <p class="mini" id="vgInfo"></p>
+                    <table class="grados" id="gradosTable"></table>
+                    <p class="mini" id="aisladosInfo"></p>
+                </div>
+
+                <div class="block hidden" id="edgeBlock">
                     <div class="block-num">04</div>
-                    <h2>Ficha técnica</h2>
-
-                    <div class="sheet-head">
-                        <span class="sheet-id" id="sheetVertex">—</span>
-                        <span class="sheet-class" id="sheetClass">—</span>
-                    </div>
-
-                    <dl class="sheet-dl">
-                        <div class="dl-row">
-                            <dt>Padre</dt>
-                            <dd id="fPadre">—</dd>
-                        </div>
-                        <div class="dl-row">
-                            <dt>Hijos</dt>
-                            <dd id="fHijos">—</dd>
-                        </div>
-                        <div class="dl-row">
-                            <dt>Hermanos</dt>
-                            <dd id="fHermanos">—</dd>
-                        </div>
-                    </dl>
+                    <h2>Función punto extremo–arista</h2>
+                    <table class="edges" id="edgesTable"></table>
                 </div>
             </section>
         </div>

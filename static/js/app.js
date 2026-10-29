@@ -131,17 +131,32 @@ function drawTree(animate) {
     const px = node => padX + (positions[node].col + 0.5) * colW;
     const py = node => padY + positions[node].depth * rowH;
 
-    // edges
+    // edges — conectores ortogonales (tipo organigrama) con esquinas redondeadas
     let edgeDelay = 0;
+    const corner = 9; // radio de la esquina redondeada
     for (const [parent, kids] of Object.entries(tree.hijos_de)) {
         for (const kid of kids) {
             const p = document.createElementNS(SVGNS, "path");
-            const x1 = px(parent), y1 = py(parent);
-            const x2 = px(kid), y2 = py(kid);
-            const my = (y1 + y2) / 2;
-            p.setAttribute("d", `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
+            const x1 = px(parent), y1 = py(parent) + r;   // sale del borde inferior del padre
+            const x2 = px(kid), y2 = py(kid) - r;          // entra por el borde superior del hijo
+            const my = (y1 + y2) / 2;                       // altura del tramo horizontal
+
+            let d;
+            if (Math.abs(x2 - x1) < 1) {
+                // hijo justo debajo: línea recta vertical
+                d = `M ${x1} ${y1} L ${x2} ${y2}`;
+            } else {
+                const dir = x2 > x1 ? 1 : -1;
+                d = `M ${x1} ${y1} ` +
+                    `L ${x1} ${my - corner} ` +
+                    `Q ${x1} ${my} ${x1 + dir * corner} ${my} ` +
+                    `L ${x2 - dir * corner} ${my} ` +
+                    `Q ${x2} ${my} ${x2} ${my + corner} ` +
+                    `L ${x2} ${y2}`;
+            }
+            p.setAttribute("d", d);
             p.setAttribute("class", "edge-line");
-            if (!animate) p.style.animation = "none", p.style.strokeDashoffset = "0";
+            if (!animate) { p.style.animation = "none"; p.style.opacity = "1"; }
             else p.style.animationDelay = `${edgeDelay += 0.03}s`;
             p.dataset.parent = parent;
             p.dataset.child = kid;
